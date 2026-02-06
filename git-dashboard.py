@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 import os
 import subprocess
-import sys  # Added for clean exit
+import sys
 import tkinter as tk
 from datetime import datetime
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
+
+from dotenv import load_dotenv, set_key
 
 """
 Create link:
@@ -14,9 +16,14 @@ alias repos command with disown so gui can run independently of the terminal:
 alias repos='~/.local/bin/repos > /dev/null 2>&1 & disown'
 """
 
-# --- CONFIGURATION ---
-EDITOR_COMMAND = "zed"
-BASE_PATH = "/home/bvargo@corp.greenphire.net/Documents"
+# --- LOAD CONFIGURATION ---
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+ENV_PATH = os.path.join(SCRIPT_DIR, ".env")
+load_dotenv(ENV_PATH)
+
+# Initial global configs
+EDITOR_COMMAND = os.getenv("EDITOR_COMMAND", "code")
+BASE_PATH = os.getenv("BASE_PATH", os.path.expanduser("~/Documents"))
 
 # --- DARK THEME COLORS ---
 BG_MAIN = "#1e1e1e"
@@ -71,6 +78,107 @@ def get_git_repos(path):
     except Exception as e:
         print(f"Error: {e}")
         return []
+
+
+class SettingsWindow(tk.Toplevel):
+    def __init__(self, launcher_instance):
+        super().__init__(launcher_instance.root)
+        self.launcher = launcher_instance
+        self.title("Settings")
+        self.geometry("500x300")
+        self.configure(bg=BG_MAIN)
+        self.transient(launcher_instance.root)
+        self.grab_set()
+
+        tk.Label(
+            self,
+            text="Application Settings",
+            bg=BG_MAIN,
+            fg=ACCENT,
+            font=("Segoe UI", 12, "bold"),
+        ).pack(pady=15)
+
+        # --- Editor Command Row ---
+        tk.Label(
+            self,
+            text="Editor Command (e.g., code, charm, subl, zed):",
+            bg=BG_MAIN,
+            fg=FG_TEXT,
+        ).pack(anchor="w", padx=20)
+        self.ed_entry = tk.Entry(
+            self, bg=BG_STRIPE, fg=FG_TEXT, insertbackground=FG_TEXT, borderwidth=0
+        )
+        self.ed_entry.insert(0, os.getenv("EDITOR_COMMAND", "zed"))
+        self.ed_entry.pack(fill=tk.X, padx=20, pady=5, ipady=4)
+
+        # --- Base Path Row ---
+        tk.Label(self, text="Search Path:", bg=BG_MAIN, fg=FG_TEXT).pack(
+            anchor="w", padx=20, pady=(10, 0)
+        )
+
+        path_frame = tk.Frame(self, bg=BG_MAIN)
+        path_frame.pack(fill=tk.X, padx=20, pady=5)
+
+        self.path_entry = tk.Entry(
+            path_frame,
+            bg=BG_STRIPE,
+            fg=FG_TEXT,
+            insertbackground=FG_TEXT,
+            borderwidth=0,
+        )
+        self.path_entry.insert(0, os.getenv("BASE_PATH", ""))
+        self.path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=4)
+
+        btn_browse = tk.Button(
+            path_frame,
+            text="Browse...",
+            command=self.browse_folder,
+            bg=BG_HEADER,
+            fg=FG_TEXT,
+            relief="flat",
+            padx=10,
+        )
+        btn_browse.pack(side=tk.LEFT, padx=(5, 0))
+
+        # --- Save Button ---
+        btn_save = tk.Button(
+            self,
+            text="SAVE & REFRESH",
+            command=self.save,
+            bg=SUCCESS,
+            fg="white",
+            relief="flat",
+            font=("Segoe UI", 9, "bold"),
+        )
+        btn_save.pack(pady=25, padx=20, fill=tk.X, ipady=8)
+
+    def browse_folder(self):
+        # Opens the native Ubuntu directory picker
+        selected_directory = filedialog.askdirectory(initialdir=self.path_entry.get())
+        if selected_directory:
+            self.path_entry.delete(0, tk.END)
+            self.path_entry.insert(0, selected_directory)
+
+    def save(self):
+        new_editor = self.ed_entry.get().strip()
+        new_path = self.path_entry.get().strip()
+
+        if not os.path.isdir(new_path):
+            messagebox.showerror("Error", "Selected path is not a valid directory.")
+            return
+
+        set_key(ENV_PATH, "EDITOR_COMMAND", new_editor)
+        set_key(ENV_PATH, "BASE_PATH", new_path)
+
+        global EDITOR_COMMAND, BASE_PATH
+        EDITOR_COMMAND = new_editor
+        BASE_PATH = new_path
+
+        os.environ["EDITOR_COMMAND"] = new_editor
+        os.environ["BASE_PATH"] = new_path
+
+        self.launcher.refresh_data()
+        self.destroy()
 
 
 class DarkRepoLauncher:
@@ -136,6 +244,7 @@ class DarkRepoLauncher:
         self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10, ipady=4)
         self.search_entry.focus_set()
 
+        # Refresh & Settings Buttons
         self.btn_refresh = tk.Button(
             top_frame,
             text="↻",
@@ -144,11 +253,21 @@ class DarkRepoLauncher:
             fg=FG_TEXT,
             font=("Segoe UI", 12, "bold"),
             relief="flat",
-            padx=10,
-            cursor="hand2",
-            activebackground=HOVER,
+            padx=8,
         )
-        self.btn_refresh.pack(side=tk.RIGHT)
+        self.btn_refresh.pack(side=tk.LEFT, padx=2)
+
+        self.btn_settings = tk.Button(
+            top_frame,
+            text="⚙",
+            command=self.open_settings,
+            bg=BG_HEADER,
+            fg=FG_TEXT,
+            font=("Segoe UI", 12),
+            relief="flat",
+            padx=8,
+        )
+        self.btn_settings.pack(side=tk.LEFT, padx=2)
 
         # Table
         self.tree_frame = tk.Frame(root, bg=BG_MAIN)
@@ -184,7 +303,7 @@ class DarkRepoLauncher:
 
         self.btn_open = tk.Button(
             root,
-            text="OPEN IN ZED",
+            text=f"OPEN IN {EDITOR_COMMAND.upper()}",
             command=self.open_repo,
             bg=SUCCESS,
             fg="white",
@@ -197,6 +316,9 @@ class DarkRepoLauncher:
 
         self.refresh_data()
 
+    def open_settings(self):
+        SettingsWindow(self)
+
     def quit_app(self, event=None):
         # This breaks the mainloop AND kills the underlying Tcl interpreter
         self.root.quit()
@@ -207,6 +329,7 @@ class DarkRepoLauncher:
         self.all_repos = get_git_repos(BASE_PATH)
         col = "Last Commit" if self.sort_reverse["Last Commit"] else "Name"
         self.sort_column(col, toggle=False)
+        self.btn_open.config(text=f"OPEN IN {EDITOR_COMMAND.upper()}")
 
     def sort_column(self, col, toggle=True):
         reverse = self.sort_reverse[col]
