@@ -7,8 +7,11 @@ from datetime import datetime
 from tkinter import messagebox, ttk
 
 """
-Create link
+Create link:
 ln -s /home/bvargo@corp.greenphire.net/Documents/git-dashboard/git-dashboard.py ~/.local/bin/repos
+
+alias repos command with disown so gui can run independently of the terminal:
+alias repos='~/.local/bin/repos > /dev/null 2>&1 & disown'
 """
 
 # --- CONFIGURATION ---
