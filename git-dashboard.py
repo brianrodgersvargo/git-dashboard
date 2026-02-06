@@ -94,12 +94,103 @@ def get_git_repos(path):
         return []
 
 
+# --- CUSTOM DARK FOLDER BROWSER ---
+class DarkFolderBrowser(tk.Toplevel):
+    def __init__(self, parent, initial_dir):
+        super().__init__(parent)
+        self.title("Select Directory")
+        self.geometry("500x500")
+        self.configure(bg=BG_MAIN)
+        self.result = None
+        self.current_dir = os.path.abspath(os.path.expanduser(initial_dir or "~"))
+
+        self.transient(parent)
+        self.grab_set()
+
+        # Header with Path
+        self.path_label = tk.Label(
+            self,
+            text=self.current_dir,
+            bg=BG_MAIN,
+            fg=ACCENT,
+            font=("Segoe UI", 9),
+            anchor="w",
+        )
+        self.path_label.pack(fill=tk.X, padx=15, pady=10)
+
+        # Folder List (Treeview)
+        self.tree = ttk.Treeview(self, columns=("Name"), show="headings")
+        self.tree.heading("Name", text="FOLDERS", anchor="w")
+        self.tree.pack(fill=tk.BOTH, expand=True, padx=15)
+        self.tree.bind("<Double-1>", self.on_double_click)
+
+        # Navigation Buttons
+        btn_frame = tk.Frame(self, bg=BG_MAIN)
+        btn_frame.pack(fill=tk.X, padx=15, pady=15)
+
+        tk.Button(
+            btn_frame,
+            text="UP",
+            command=self.go_up,
+            bg=BG_HEADER,
+            fg=FG_TEXT,
+            relief="flat",
+            width=10,
+        ).pack(side=tk.LEFT)
+        tk.Button(
+            btn_frame,
+            text="SELECT THIS FOLDER",
+            command=self.select,
+            bg=SUCCESS,
+            fg="white",
+            relief="flat",
+            font=("Segoe UI", 9, "bold"),
+        ).pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(10, 0))
+
+        self.load_dir()
+
+    def load_dir(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        self.path_label.config(text=self.current_dir)
+        try:
+            entries = sorted(
+                [
+                    f.name
+                    for f in os.scandir(self.current_dir)
+                    if f.is_dir() and not f.name.startswith(".")
+                ],
+                key=str.lower,
+            )
+            for entry in entries:
+                self.tree.insert("", tk.END, values=(entry,))
+        except PermissionError:
+            messagebox.showerror("Error", "Permission Denied")
+            self.go_up()
+
+    def go_up(self):
+        self.current_dir = os.path.dirname(self.current_dir)
+        self.load_dir()
+
+    def on_double_click(self, event):
+        sel = self.tree.selection()
+        if sel:
+            folder_name = self.tree.item(sel[0])["values"][0]
+            self.current_dir = os.path.join(self.current_dir, folder_name)
+            self.load_dir()
+
+    def select(self):
+        self.result = self.current_dir
+        self.destroy()
+
+
+# --- SETTINGS WINDOW ---
 class SettingsWindow(tk.Toplevel):
     def __init__(self, launcher_instance):
         super().__init__(launcher_instance.root)
         self.launcher = launcher_instance
         self.title("Settings")
-        self.geometry("500x300")
+        self.geometry("500x320")
         self.configure(bg=BG_MAIN)
         self.transient(launcher_instance.root)
         self.grab_set()
@@ -112,24 +203,20 @@ class SettingsWindow(tk.Toplevel):
             font=("Segoe UI", 12, "bold"),
         ).pack(pady=15)
 
-        # --- Editor Command Row ---
+        # Editor Row
         tk.Label(
-            self,
-            text="Editor Command (e.g., code, charm, subl, zed):",
-            bg=BG_MAIN,
-            fg=FG_TEXT,
+            self, text="Editor Command (e.g., code, zed):", bg=BG_MAIN, fg=FG_TEXT
         ).pack(anchor="w", padx=20)
         self.ed_entry = tk.Entry(
             self, bg=BG_STRIPE, fg=FG_TEXT, insertbackground=FG_TEXT, borderwidth=0
         )
-        self.ed_entry.insert(0, os.getenv("EDITOR_COMMAND", "zed"))
+        self.ed_entry.insert(0, EDITOR_COMMAND)
         self.ed_entry.pack(fill=tk.X, padx=20, pady=5, ipady=4)
 
-        # --- Base Path Row ---
+        # Path Row
         tk.Label(self, text="Search Path:", bg=BG_MAIN, fg=FG_TEXT).pack(
             anchor="w", padx=20, pady=(10, 0)
         )
-
         path_frame = tk.Frame(self, bg=BG_MAIN)
         path_frame.pack(fill=tk.X, padx=20, pady=5)
 
@@ -140,10 +227,10 @@ class SettingsWindow(tk.Toplevel):
             insertbackground=FG_TEXT,
             borderwidth=0,
         )
-        self.path_entry.insert(0, os.getenv("BASE_PATH", ""))
+        self.path_entry.insert(0, BASE_PATH)
         self.path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=4)
 
-        btn_browse = tk.Button(
+        tk.Button(
             path_frame,
             text="Browse...",
             command=self.browse_folder,
@@ -151,11 +238,10 @@ class SettingsWindow(tk.Toplevel):
             fg=FG_TEXT,
             relief="flat",
             padx=10,
-        )
-        btn_browse.pack(side=tk.LEFT, padx=(5, 0))
+        ).pack(side=tk.LEFT, padx=(5, 0))
 
-        # --- Save Button ---
-        btn_save = tk.Button(
+        # Save
+        tk.Button(
             self,
             text="SAVE & REFRESH",
             command=self.save,
@@ -163,34 +249,26 @@ class SettingsWindow(tk.Toplevel):
             fg="white",
             relief="flat",
             font=("Segoe UI", 9, "bold"),
-        )
-        btn_save.pack(pady=25, padx=20, fill=tk.X, ipady=8)
+        ).pack(pady=25, padx=20, fill=tk.X, ipady=8)
 
     def browse_folder(self):
-        # Opens the native Ubuntu directory picker
-        selected_directory = filedialog.askdirectory(initialdir=self.path_entry.get())
-        if selected_directory:
+        browser = DarkFolderBrowser(self, self.path_entry.get())
+        self.wait_window(browser)  # Wait for browser to close
+        if browser.result:
             self.path_entry.delete(0, tk.END)
-            self.path_entry.insert(0, selected_directory)
+            self.path_entry.insert(0, browser.result)
 
     def save(self):
         new_editor = self.ed_entry.get().strip()
         new_path = self.path_entry.get().strip()
-
-        if not os.path.isdir(new_path):
-            messagebox.showerror("Error", "Selected path is not a valid directory.")
+        if not os.path.isdir(os.path.expanduser(new_path)):
+            messagebox.showerror("Error", "Invalid path.")
             return
 
         set_key(ENV_PATH, "EDITOR_COMMAND", new_editor)
         set_key(ENV_PATH, "BASE_PATH", new_path)
-
         global EDITOR_COMMAND, BASE_PATH
-        EDITOR_COMMAND = new_editor
-        BASE_PATH = new_path
-
-        os.environ["EDITOR_COMMAND"] = new_editor
-        os.environ["BASE_PATH"] = new_path
-
+        EDITOR_COMMAND, BASE_PATH = new_editor, new_path
         self.launcher.refresh_data()
         self.destroy()
 

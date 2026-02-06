@@ -20,3 +20,9 @@ What setup.sh does:
 
 # Usage
 Simply type `repos` in any terminal window. The dashboard will launch independently, allowing you to search, sort, and open your projects with a double-click or by pressing Enter.
+
+Editor setup:
+- Set the command to open your editor of choice in settings. (e.g., `code` for vscode, or `subl` for sublime text)
+
+Directory setup:
+- Set the base directory to search for git repos in (e.g., documents)
